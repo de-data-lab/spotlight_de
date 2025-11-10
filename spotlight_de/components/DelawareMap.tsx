@@ -136,7 +136,6 @@ export default function DelawareMap() {
     () => new Set(top10.map((f) => f.properties.GEOID)),
     [top10]
   );
-
   // ---- Style ----
   const style = (feature: GeoFeature) => {
     const p = feature.properties;
