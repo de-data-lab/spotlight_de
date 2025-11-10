@@ -236,7 +236,7 @@ export default function DelawareMap() {
           }}
         >
           <option value="sussex">Sussex</option>
-          <option value="kent">Kent</option>
+          {/* <option value="kent">Kent</option> */}
           <option value="newcastle">New Castle</option>
         </select>
       </div>
@@ -330,7 +330,7 @@ export default function DelawareMap() {
           );
         })}
 
-        <Legend selectedLayer={selectedLayer} />
+        {/* <Legend selectedLayer={selectedLayer} /> */}
       </MapContainer>
     </div>
   );
