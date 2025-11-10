@@ -8,7 +8,7 @@ export function Legend() {
   useEffect(() => {
     if (!map) return;
 
-    const legend = L.control({ position: "bottomleft" }); // Tool tip alignment
+    const legend = new L.Control({ position: "bottomleft" }); // Tool tip alignment
 
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "info legend");
