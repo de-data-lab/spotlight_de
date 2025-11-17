@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spotlight Delaware - Property Reassesment",
+  title: "Spotlight Delaware - Property Reassessment",
   description:
     "An understanding of the reassessment process across Delaware communities.",
 };

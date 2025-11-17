@@ -34,7 +34,7 @@ export default function DelawareMap() {
   useEffect(() => {
     const fetchCountyData = async () => {
       if (county === "all") {
-        const counties = ["sussex", "newcastle"]; // add kent if you have it
+        const counties = ["sussex", "newcastle", "kent"]; // add kent if you have it
         const allData: Record<string, GeoData> = {};
 
         for (const c of counties) {
@@ -248,7 +248,7 @@ export default function DelawareMap() {
         {/* Title and description */}
         <div>
           <h1 style={{ margin: 0, fontSize: 20, color: "#555" }}>
-            Spotlight Delaware - Property Reassesment
+            Spotlight Delaware - Property Reassessment
           </h1>
           <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
             An understanding of the reassessment process across Delaware
@@ -307,6 +307,7 @@ export default function DelawareMap() {
               <option value="all">All Counties</option>
               <option value="sussex">Sussex</option>
               <option value="newcastle">New Castle</option>
+              <option value="kent">Kent</option>
             </select>
           </div>
 
