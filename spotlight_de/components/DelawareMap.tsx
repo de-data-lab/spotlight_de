@@ -8,6 +8,7 @@ import {
   Marker,
   Tooltip,
   useMap,
+  ZoomControl,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -30,18 +31,40 @@ export default function DelawareMap() {
   );
   const [selectedLayer, setSelectedLayer] = useState<string>("tax_change");
   const [county, setCounty] = useState("sussex"); // default county
-
   useEffect(() => {
-    const countyFile = `${county.toLowerCase()}_all_layers.json`; // Adjust this if necessary
-    fetch(`/data/${countyFile}`)
-      .then((res) => res.json())
-      .then((data) => setAllLayers(data))
-      .catch((err) => console.error("Error loading GeoJSON:", err));
-  }, [county]); // The effect now runs whenever the county changes
+    const fetchCountyData = async () => {
+      if (county === "all") {
+        const counties = ["sussex", "newcastle"]; // add kent if you have it
+        const allData: Record<string, GeoData> = {};
 
-  console.log(allLayers);
+        for (const c of counties) {
+          const res = await fetch(`/data/${c}_all_layers.json`);
+          const data = await res.json();
+          // Merge layers
+          for (const layer in data) {
+            if (!allData[layer]) {
+              allData[layer] = { type: "FeatureCollection", features: [] };
+            }
+            allData[layer].features.push(...data[layer].features);
+          }
+        }
+
+        setAllLayers(allData);
+      } else {
+        const res = await fetch(`/data/${county}_all_layers.json`);
+        const data = await res.json();
+        setAllLayers(data);
+      }
+    };
+
+    fetchCountyData().catch((err) =>
+      console.error("Error loading GeoJSON:", err)
+    );
+  }, [county]);
+
+  // console.log(allLayers);
   const geoData = allLayers ? allLayers[selectedLayer] : null;
-  console.log(geoData);
+  // console.log(geoData);
   // ---- Return numeric value depending on layer ----
   const getValue = (p: Record<string, any>) => {
     switch (selectedLayer) {
@@ -84,34 +107,40 @@ export default function DelawareMap() {
     }
   }, [geoData, selectedLayer]);
 
-  // ---- Improved diverging color scale (blue ↔ gray ↔ yellow/red) with dynamic scaling ----
+  const interpolate = (start: number[], end: number[], t: number) => {
+    return start.map((s, i) => Math.round(s + (end[i] - s) * t));
+  };
+
+  const rgb = (arr: number[]) => `rgb(${arr[0]},${arr[1]},${arr[2]})`;
+
+  const gradient = [
+    [0, 70, 170], // Blue
+    [40, 180, 40], // Green
+    [255, 255, 0], // Yellow
+    [255, 140, 0], // Orange
+    [255, 0, 0], // Red
+  ];
+
   const getColor = (value: number | null) => {
     if (value == null || isNaN(value)) return "#ccc";
 
     const [minVal, maxVal] = valueRange;
     if (minVal === maxVal) return "#e0e0e0";
 
-    // Normalize value to [-1, 1]
-    const range = Math.max(Math.abs(minVal), Math.abs(maxVal));
-    const norm = Math.max(-1, Math.min(value / range, 1));
+    // Normalize to 0 → 1
+    let t = (value - minVal) / (maxVal - minVal);
+    t = Math.min(1, Math.max(0, t)); // clamp
 
-    if (norm > 0) {
-      // positive → yellow→orange→red
-      const t = norm;
-      const r = 255;
-      const g = Math.floor(255 - t * 155); // 255→100
-      const b = 0;
-      return `rgb(${r},${g},${b})`;
-    } else if (norm < 0) {
-      // negative → lightblue→deepblue
-      const t = Math.abs(norm);
-      const r = Math.floor(173 - t * 73); // 173→100
-      const g = Math.floor(216 - t * 116); // 216→100
-      const b = Math.floor(230 - t * 130); // 230→100
-      return `rgb(${r},${g},${b})`;
-    } else {
-      return "#e0e0e0";
-    }
+    const n = gradient.length - 1;
+    const scaled = t * n;
+
+    const idx = Math.floor(scaled);
+    const localT = scaled - idx;
+
+    const start = gradient[idx];
+    const end = gradient[Math.min(idx + 1, n)]; // <= FIXED
+
+    return rgb(interpolate(start, end, localT));
   };
 
   // ---- Compute top 10 (for highlight layers only) ----
@@ -197,141 +226,175 @@ export default function DelawareMap() {
   };
 
   return (
-    <div style={{ height: "100vh", width: "100%", position: "relative" }}>
-      {/* County selector */}
-      <div
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <header
         style={{
-          position: "absolute",
+          display: "flex",
+          alignItems: "center",
+          padding: "10px 20px",
+          backgroundColor: "#fff",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
           zIndex: 1000,
-          top: 10,
-          left: 10,
-          background: "white",
-          padding: "6px 10px",
-          borderRadius: 4,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
         }}
       >
-        <label
-          htmlFor="countySelect"
-          style={{
-            marginRight: 8,
-            color: "#333", // Darker text color for better contrast
-            fontWeight: "bold",
-            fontSize: "14px", // Slightly larger text
-          }}
-        >
-          Select County:
-        </label>
-        <select
-          id="countySelect"
-          value={county}
-          onChange={(e) => setCounty(e.target.value)}
-          style={{
-            padding: "6px 12px",
-            borderRadius: "4px",
-            fontSize: "14px",
-            border: "1px solid #ccc",
-            backgroundColor: "#fff",
-            color: "#333", // Dark text for contrast
-          }}
-        >
-          <option value="sussex">Sussex</option>
-          {/* <option value="kent">Kent</option> */}
-          <option value="newcastle">New Castle</option>
-        </select>
-      </div>
-
-      {/* Layer selector */}
-      <div
-        style={{
-          position: "absolute",
-          zIndex: 1000,
-          top: 50,
-          left: 10,
-          background: "white",
-          padding: "6px 10px",
-          borderRadius: 4,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-        }}
-      >
-        <label
-          htmlFor="layerSelect"
-          style={{
-            marginRight: 8,
-            color: "#333", // Darker text color for better contrast
-            fontWeight: "bold",
-            fontSize: "14px", // Slightly larger text
-          }}
-        >
-          Select layer:
-        </label>
-        <select
-          id="layerSelect"
-          value={selectedLayer}
-          onChange={(e) => setSelectedLayer(e.target.value)}
-          style={{
-            padding: "6px 12px",
-            borderRadius: "4px",
-            fontSize: "14px",
-            border: "1px solid #ccc", // Border for better visibility
-            backgroundColor: "#fff",
-            color: "#333", // Dark text for contrast
-          }}
-        >
-          <option value="tax_change">Tax % Change</option>
-          <option value="assessment_change">Assessment % Change</option>
-          <option value="tax_burden_change">Tax Burden % Change</option>
-          <option value="res_share_change">Residential Share Change</option>
-          <option value="com_share_change">Commercial Share Change</option>
-          <option value="agr_share_change">Agricultural Share Change</option>
-          <option value="top10_tax_increase">Top 10 Tax Increase</option>
-        </select>
-      </div>
-
-      {/* Map */}
-      <MapContainer
-        center={[39.0, -75.5]}
-        zoom={9}
-        scrollWheelZoom={true}
-        style={{ height: "100%", width: "100%" }}
-      >
-        <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        {/* Logo */}
+        <img
+          src="https://i0.wp.com/spotlightdelaware.org/wp-content/uploads/2023/11/SpotlightIcon2-Damon-Martin.png"
+          alt="Logo"
+          style={{ height: 40, marginRight: 16 }}
         />
 
-        {geoData && (
-          <GeoJSONLayer
-            data={geoData}
-            style={style as any}
-            onEachFeature={onEachFeature as any}
+        {/* Title and description */}
+        <div>
+          <h1 style={{ margin: 0, fontSize: 20, color: "#555" }}>
+            Spotlight Delaware - Property Reassesment
+          </h1>
+          <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
+            An understanding of the reassessment process across Delaware
+            communities.
+          </p>
+        </div>
+      </header>
+
+      {/* Map wrapper */}
+      <div style={{ flex: 1, position: "relative" }}>
+        {/* County & Layer selectors */}
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 1000,
+            top: 10, // below the header
+            left: 10,
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            background: "white",
+            padding: "10px",
+            borderRadius: 4,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+            minWidth: "280px",
+          }}
+        >
+          {/* County selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <label
+              htmlFor="countySelect"
+              style={{
+                color: "#333",
+                fontWeight: "bold",
+                fontSize: "14px",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              Select County:
+            </label>
+            <select
+              id="countySelect"
+              value={county}
+              onChange={(e) => setCounty(e.target.value)}
+              style={{
+                flexGrow: 1,
+                padding: "6px 12px",
+                borderRadius: "4px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                backgroundColor: "#fff",
+                color: "#333",
+              }}
+            >
+              <option value="all">All Counties</option>
+              <option value="sussex">Sussex</option>
+              <option value="newcastle">New Castle</option>
+            </select>
+          </div>
+
+          {/* Layer selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <label
+              htmlFor="layerSelect"
+              style={{
+                color: "#333",
+                fontWeight: "bold",
+                fontSize: "14px",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              View by:
+            </label>
+            <select
+              id="layerSelect"
+              value={selectedLayer}
+              onChange={(e) => setSelectedLayer(e.target.value)}
+              style={{
+                flexGrow: 1,
+                padding: "6px 12px",
+                borderRadius: "4px",
+                fontSize: "14px",
+                border: "1px solid #ccc",
+                backgroundColor: "#fff",
+                color: "#333",
+              }}
+            >
+              <option value="tax_change">Tax % Change</option>
+              <option value="assessment_change">Assessment % Change</option>
+              <option value="tax_burden_change">Tax Burden % Change</option>
+              <option value="res_share_change">Residential Share Change</option>
+              <option value="com_share_change">Commercial Share Change</option>
+              <option value="agr_share_change">
+                Agricultural Share Change
+              </option>
+              <option value="top10_tax_increase">Top 10 Tax Increase</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Map */}
+        <MapContainer
+          center={[39.0, -75.5]}
+          zoom={9}
+          scrollWheelZoom={true}
+          style={{ height: "100%", width: "100%" }}
+          zoomControl={false}
+        >
+          <TileLayer
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-        )}
-
-        {/* Persistent labels for top 10 (only highlightable layers) */}
-        {top10.map((f, i) => {
-          const lat = parseFloat(f.properties.INTPTLAT);
-          const lon = parseFloat(f.properties.INTPTLON);
-          if (isNaN(lat) || isNaN(lon)) return null;
-          const name =
-            f.properties.NAMELSAD || f.properties.NAME || f.properties.GEOID;
-          const value = getValue(f.properties);
-          return (
-            <Marker
-              key={i}
-              position={[lat, lon]}
-              icon={L.divIcon({
-                className: "label-icon",
-                html: `<div style="background: rgba(255,255,255,0.9); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; border: 1px solid #333; white-space: nowrap;">${name}<br/><span style="color:#d33;">${value?.toFixed(
-                  1
-                )}%</span></div>`,
-              })}
+          {/* Custom zoom control */}
+          <ZoomControl position="bottomleft" />
+          {geoData && (
+            <GeoJSONLayer
+              data={geoData}
+              style={style as any}
+              onEachFeature={onEachFeature as any}
             />
-          );
-        })}
-
-        {/* <Legend selectedLayer={selectedLayer} /> */}
-      </MapContainer>
+          )}
+          {top10.map((f, i) => {
+            const lat = parseFloat(f.properties.INTPTLAT);
+            const lon = parseFloat(f.properties.INTPTLON);
+            if (isNaN(lat) || isNaN(lon)) return null;
+            const name =
+              f.properties.NAMELSAD || f.properties.NAME || f.properties.GEOID;
+            const value = getValue(f.properties);
+            return (
+              <Marker
+                key={i}
+                position={[lat, lon]}
+                icon={L.divIcon({
+                  className: "label-icon",
+                  html: `<div style="background: rgba(255,255,255,0.9); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; border: 1px solid #333; white-space: nowrap;">${name}<br/><span style="color:#d33;">${value?.toFixed(
+                    1
+                  )}%</span></div>`,
+                })}
+              />
+            );
+          })}
+          <Legend min={valueRange[0]} max={valueRange[1]} />
+        </MapContainer>
+      </div>
     </div>
   );
 }
