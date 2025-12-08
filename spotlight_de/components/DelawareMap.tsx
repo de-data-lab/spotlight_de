@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
   GeoJSON,
-  Marker,
-  Tooltip,
   useMap,
   ZoomControl,
 } from "react-leaflet";
@@ -26,35 +24,65 @@ type GeoData = {
 };
 
 export default function DelawareMap() {
-  const [allLayers, setAllLayers] = useState<Record<string, GeoData> | null>(
-    null
-  );
-  const [selectedLayer, setSelectedLayer] = useState<string>("tax_change");
-  const [county, setCounty] = useState("sussex"); // default county
+  const [geoData, setGeoData] = useState<GeoData | null>(null);
+  const [maskData, setMaskData] = useState<GeoData | null>(null);
+  const [selectedLayer, setSelectedLayer] = useState("tax_change");
+  const [county, setCounty] = useState("all"); // default county
+  const [valueRange, setValueRange] = useState<[number, number]>([0, 0]);
+
+  // Load surrounding states mask
+  useEffect(() => {
+    fetch("/data/surrounding_states.json")
+      .then((res) => res.json())
+      .then(setMaskData)
+      .catch((err) => console.error("Error loading mask:", err));
+  }, []);
+
+  const isValidFeature = (f: GeoFeature) => {
+    const p = f.properties;
+    const fieldsToCheck = [
+      "tax_sum_2024",
+      "tax_sum_2025",
+      "assess_sum_2024",
+      "assess_sum_2025",
+      "tax_mean_2024",
+      "tax_mean_2025",
+      "tax_median_2024",
+      "tax_median_2025",
+      "assess_mean_2024",
+      "assess_mean_2025",
+      "assess_median_2024",
+      "assess_median_2025",
+      "tax_change_pct",
+      "assessment_change_pct",
+      "burden_2024",
+      "burden_2025",
+      "burden_change_pct",
+    ];
+    return fieldsToCheck.some((field) => p[field] != null);
+  };
+
+  // Load county data
   useEffect(() => {
     const fetchCountyData = async () => {
+      let url: string;
+
       if (county === "all") {
-        const counties = ["sussex", "newcastle", "kent"]; // add kent if you have it
-        const allData: Record<string, GeoData> = {};
-
-        for (const c of counties) {
-          const res = await fetch(`/data/${c}_all_layers.json`);
-          const data = await res.json();
-          // Merge layers
-          for (const layer in data) {
-            if (!allData[layer]) {
-              allData[layer] = { type: "FeatureCollection", features: [] };
-            }
-            allData[layer].features.push(...data[layer].features);
-          }
-        }
-
-        setAllLayers(allData);
+        url = `/data/FE_statewide_tract_metrics.json`; // the combined JSON file
       } else {
-        const res = await fetch(`/data/${county}_all_layers.json`);
-        const data = await res.json();
-        setAllLayers(data);
+        url = `/data/FE_${county}_tract_metrics.json`;
       }
+
+      const res = await fetch(url);
+      const data: GeoData = await res.json();
+
+      // Filter features to ensure we only show valid data
+      const filteredFeatures = data.features.filter(isValidFeature);
+
+      setGeoData({
+        type: "FeatureCollection",
+        features: filteredFeatures,
+      });
     };
 
     fetchCountyData().catch((err) =>
@@ -62,10 +90,6 @@ export default function DelawareMap() {
     );
   }, [county]);
 
-  // console.log(allLayers);
-  const geoData = allLayers ? allLayers[selectedLayer] : null;
-  // console.log(geoData);
-  // ---- Return numeric value depending on layer ----
   const getValue = (p: Record<string, any>) => {
     switch (selectedLayer) {
       case "tax_change":
@@ -73,26 +97,15 @@ export default function DelawareMap() {
       case "assessment_change":
         return p.assessment_change_pct;
       case "tax_burden_change":
-        return p.burden_change != null ? p.burden_change * 100 : null;
-      case "res_share_change":
-        return p.res_share_change != null ? p.res_share_change * 100 : null;
-      case "com_share_change":
-        return p.com_share_change != null ? p.com_share_change * 100 : null;
-      case "agr_share_change":
-        return p.agr_share_change != null ? p.agr_share_change * 100 : null;
-      case "top10_tax_increase":
-        return p.tax_change_pct;
+        return p.burden_change_pct;
       default:
         return null;
     }
   };
 
-  // ---- Compute dynamic range (min/max) for current layer ----
-  const [valueRange, setValueRange] = useState<[number, number]>([0, 0]);
-
+  // Compute dynamic range
   useEffect(() => {
     if (!geoData?.features) return;
-
     const values = geoData.features
       .map((f) => getValue(f.properties))
       .filter((v) => v != null && !isNaN(v));
@@ -100,134 +113,146 @@ export default function DelawareMap() {
     if (values.length > 0) {
       const min = Math.min(...values);
       const max = Math.max(...values);
-      // avoid zero-width range
-      const safeMin = min === max ? min - 1 : min;
-      const safeMax = min === max ? max + 1 : max;
-      setValueRange([safeMin, safeMax]);
+      setValueRange([min === max ? min - 1 : min, min === max ? max + 1 : max]);
     }
   }, [geoData, selectedLayer]);
 
-  const interpolate = (start: number[], end: number[], t: number) => {
-    return start.map((s, i) => Math.round(s + (end[i] - s) * t));
-  };
-
-  const rgb = (arr: number[]) => `rgb(${arr[0]},${arr[1]},${arr[2]})`;
-
-  const gradient = [
-    [0, 70, 170], // Blue
-    [40, 180, 40], // Green
-    [255, 255, 0], // Yellow
-    [255, 140, 0], // Orange
-    [255, 0, 0], // Red
+  const bucketColors = [
+    "#08306b",
+    "#08519c",
+    "#2171b5",
+    "#6baed6",
+    "#c6dbef",
+    "#ffffff",
+    "#fcbba1",
+    "#fc9272",
+    "#fb6a4a",
+    "#de2d26",
+    "#a50f15",
   ];
 
   const getColor = (value: number | null) => {
     if (value == null || isNaN(value)) return "#ccc";
-
     const [minVal, maxVal] = valueRange;
-    if (minVal === maxVal) return "#e0e0e0";
+    if (Math.abs(value) < 1e-10) return "#ffffff";
 
-    // Normalize to 0 → 1
-    let t = (value - minVal) / (maxVal - minVal);
-    t = Math.min(1, Math.max(0, t)); // clamp
-
-    const n = gradient.length - 1;
-    const scaled = t * n;
-
-    const idx = Math.floor(scaled);
-    const localT = scaled - idx;
-
-    const start = gradient[idx];
-    const end = gradient[Math.min(idx + 1, n)]; // <= FIXED
-
-    return rgb(interpolate(start, end, localT));
+    if (value < 0) {
+      const t = value / minVal;
+      return bucketColors[Math.max(0, Math.min(4, Math.floor((1 - t) * 5)))];
+    }
+    if (value > 0) {
+      const t = value / maxVal;
+      return bucketColors[Math.max(6, Math.min(10, 6 + Math.floor(t * 5)))];
+    }
+    return "#ffffff";
   };
 
-  // ---- Compute top 10 (for highlight layers only) ----
-  const highlightable = [
-    "tax_change",
-    "assessment_change",
-    "tax_burden_change",
-  ];
+  const style = (feature: GeoFeature) => ({
+    fillColor: getColor(getValue(feature.properties)),
+    weight: 1,
+    opacity: 1,
+    color: "#666",
+    fillOpacity: 0.6,
+  });
 
-  const top10 = useMemo(() => {
-    if (!geoData?.features || !highlightable.includes(selectedLayer)) return [];
-    return [...geoData.features]
-      .filter((f) => getValue(f.properties) != null)
-      .sort(
-        (a, b) =>
-          Math.abs(getValue(b.properties)) - Math.abs(getValue(a.properties))
-      )
-      .slice(0, 10);
-  }, [geoData, selectedLayer]);
-
-  const top10Ids = useMemo(
-    () => new Set(top10.map((f) => f.properties.GEOID)),
-    [top10]
-  );
-  // ---- Style ----
-  const style = (feature: GeoFeature) => {
-    const p = feature.properties;
-    const value = getValue(p);
-    const isTop = top10Ids.has(p.GEOID);
-    return {
-      fillColor: getColor(value),
-      weight: isTop ? 3 : 1,
-      opacity: 1,
-      color: isTop ? "#000" : "#666",
-      fillOpacity: isTop ? 0.9 : 0.6,
-    };
-  };
-
-  // ---- Tooltip ----
   const onEachFeature = (feature: GeoFeature, layer: L.Layer) => {
     const p = feature.properties;
-    const name =
-      selectedLayer === "top10_tax_increase"
-        ? p.district || p.NAMELSAD || p.NAME || p.GEOID
-        : p.NAMELSAD || p.NAME || p.GEOID;
-    const value = getValue(p);
 
-    let tooltipHTML = `
-    <div style="font-size: 13px">
-      <b>${name}</b><br />
-      Change: ${value?.toFixed(2) ?? "N/A"}%
-    </div>
-  `;
+    let tooltipHTML: string;
 
-    if (selectedLayer === "tax_burden_change") {
+    if (selectedLayer === "assessment_change") {
+      const changePct =
+        p.assessment_change_pct != null
+          ? p.assessment_change_pct.toFixed(2)
+          : "N/A";
+      const cityName = p.CITY_NAME || "Unknown";
+      const tractID = p.GEOID || "N/A";
+      const avg2024 =
+        p.assess_mean_2024 != null
+          ? `$${p.assess_mean_2024.toLocaleString()}`
+          : "N/A";
+      const avg2025 =
+        p.assess_mean_2025 != null
+          ? `$${p.assess_mean_2025.toLocaleString()}`
+          : "N/A";
+      const parcels =
+        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
+
       tooltipHTML = `
-      <div style="font-size: 13px">
-        <b>${name}</b><br />
-        2024 Burden: ${p.tax_burden_2024?.toFixed(2) ?? "N/A"}<br />
-        2025 Burden: ${p.tax_burden_2025?.toFixed(2) ?? "N/A"}<br />
-        Change: ${(value ?? 0).toFixed(2)}%
+      <div style="font-size:13px">
+        <b>Assessment Percent Change: ${changePct}%</b><br/><br/>
+        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
+        Avg Assessment 2024: ${avg2024}<br/>
+        Avg Assessment 2025: ${avg2025}<br/>
+        Parcels Compared: ${parcels}
       </div>
     `;
+    } else if (selectedLayer === "tax_burden_change") {
+      const changePct =
+        p.burden_change_pct != null ? p.burden_change_pct.toFixed(2) : "N/A";
+      const cityName = p.CITY_NAME || "Unknown";
+      const tractID = p.GEOID || "N/A";
+      const burden2024 =
+        p.burden_2024 != null ? `$${p.burden_2024.toLocaleString()}` : "N/A";
+      const burden2025 =
+        p.burden_2025 != null ? `$${p.burden_2025.toLocaleString()}` : "N/A";
+
+      tooltipHTML = `
+      <div style="font-size:13px">
+        <b>Tax Burden Change: ${changePct}%</b><br/><br/>
+        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
+        Tax Burden = total tax divided by total assessed value<br/>
+        Burden 2024: ${burden2024}<br/>
+        Burden 2025: ${burden2025}
+      </div>
+    `;
+    } else if (selectedLayer === "tax_change") {
+      const changePct =
+        p.tax_change_pct != null ? p.tax_change_pct.toFixed(2) : "N/A";
+      const cityName = p.CITY_NAME || "Unknown";
+      const tractID = p.GEOID || "N/A";
+      const tax2024 =
+        p.tax_mean_2024 != null
+          ? `$${p.tax_mean_2024.toLocaleString()}`
+          : "N/A";
+      const tax2025 =
+        p.tax_mean_2025 != null
+          ? `$${p.tax_mean_2025.toLocaleString()}`
+          : "N/A";
+      const parcels =
+        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
+
+      tooltipHTML = `
+      <div style="font-size:13px">
+        <b>Tax Percent Change: ${changePct}%</b><br/><br/>
+        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
+        Avg Tax 2024: ${tax2024}<br/>
+        Avg Tax 2025: ${tax2025}<br/>
+        Parcels Compared: ${parcels}
+      </div>
+    `;
+    } else {
+      const name = p.NAMELSAD || p.NAME || p.GEOID;
+      const value = getValue(p);
+      tooltipHTML = `<div style="font-size:13px"><b>${name}</b><br/>Change: ${
+        value?.toFixed(2) ?? "N/A"
+      }%</div>`;
     }
 
-    // Bind the tooltip to the layer
     layer.bindTooltip(tooltipHTML, { sticky: true });
 
     layer.on({
       mouseover: (e: L.LeafletMouseEvent) => {
-        const target = e.target as L.Path;
-        target.setStyle({ weight: 4, color: "#000" });
+        (e.target as L.Path).setStyle({ weight: 4, color: "#000" });
       },
       mouseout: (e: L.LeafletMouseEvent) => {
-        const target = e.target as L.Path;
-        const isTop = top10Ids.has(p.GEOID);
-        target.setStyle({
-          weight: isTop ? 3 : 1,
-          color: isTop ? "#000" : "#666",
-        });
+        (e.target as L.Path).setStyle({ weight: 1, color: "#666" });
       },
     });
   };
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
       <header
         style={{
           display: "flex",
@@ -238,14 +263,11 @@ export default function DelawareMap() {
           zIndex: 1000,
         }}
       >
-        {/* Logo */}
         <img
           src="https://i0.wp.com/spotlightdelaware.org/wp-content/uploads/2023/11/SpotlightIcon2-Damon-Martin.png"
           alt="Logo"
           style={{ height: 40, marginRight: 16 }}
         />
-
-        {/* Title and description */}
         <div>
           <h1 style={{ margin: 0, fontSize: 20, color: "#555" }}>
             Spotlight Delaware - Property Reassessment
@@ -257,14 +279,13 @@ export default function DelawareMap() {
         </div>
       </header>
 
-      {/* Map wrapper */}
       <div style={{ flex: 1, position: "relative" }}>
-        {/* County & Layer selectors */}
+        {/* Selectors */}
         <div
           style={{
             position: "absolute",
             zIndex: 1000,
-            top: 10, // below the header
+            top: 10,
             left: 10,
             display: "flex",
             flexDirection: "column",
@@ -276,7 +297,6 @@ export default function DelawareMap() {
             minWidth: "280px",
           }}
         >
-          {/* County selector */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <label
               htmlFor="countySelect"
@@ -284,7 +304,6 @@ export default function DelawareMap() {
                 color: "#333",
                 fontWeight: "bold",
                 fontSize: "14px",
-                whiteSpace: "nowrap",
                 flexShrink: 0,
               }}
             >
@@ -297,8 +316,8 @@ export default function DelawareMap() {
               style={{
                 flexGrow: 1,
                 padding: "6px 12px",
-                borderRadius: "4px",
-                fontSize: "14px",
+                borderRadius: 4,
+                fontSize: 14,
                 border: "1px solid #ccc",
                 backgroundColor: "#fff",
                 color: "#333",
@@ -311,7 +330,6 @@ export default function DelawareMap() {
             </select>
           </div>
 
-          {/* Layer selector */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <label
               htmlFor="layerSelect"
@@ -319,7 +337,6 @@ export default function DelawareMap() {
                 color: "#333",
                 fontWeight: "bold",
                 fontSize: "14px",
-                whiteSpace: "nowrap",
                 flexShrink: 0,
               }}
             >
@@ -332,8 +349,8 @@ export default function DelawareMap() {
               style={{
                 flexGrow: 1,
                 padding: "6px 12px",
-                borderRadius: "4px",
-                fontSize: "14px",
+                borderRadius: 4,
+                fontSize: 14,
                 border: "1px solid #ccc",
                 backgroundColor: "#fff",
                 color: "#333",
@@ -342,21 +359,14 @@ export default function DelawareMap() {
               <option value="tax_change">Tax % Change</option>
               <option value="assessment_change">Assessment % Change</option>
               <option value="tax_burden_change">Tax Burden % Change</option>
-              <option value="res_share_change">Residential Share Change</option>
-              <option value="com_share_change">Commercial Share Change</option>
-              <option value="agr_share_change">
-                Agricultural Share Change
-              </option>
-              <option value="top10_tax_increase">Top 10 Tax Increase</option>
             </select>
           </div>
         </div>
 
-        {/* Map */}
         <MapContainer
           center={[39.0, -75.5]}
           zoom={9}
-          scrollWheelZoom={true}
+          scrollWheelZoom
           style={{ height: "100%", width: "100%" }}
           zoomControl={false}
         >
@@ -364,68 +374,68 @@ export default function DelawareMap() {
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {/* Custom zoom control */}
           <ZoomControl position="bottomleft" />
+
+          {/* Greyed-out surrounding states */}
+          {maskData && (
+            <GeoJSON
+              data={maskData as GeoJSON.FeatureCollection}
+              style={{
+                fillColor: "#ccc",
+                fillOpacity: 0.6,
+                color: "#666",
+                weight: 1,
+              }}
+            />
+          )}
+
+          {/* Delaware tracts */}
           {geoData && (
             <GeoJSONLayer
               data={geoData}
-              style={style as any}
-              onEachFeature={onEachFeature as any}
+              style={style}
+              onEachFeature={onEachFeature}
             />
           )}
-          {top10.map((f, i) => {
-            const lat = parseFloat(f.properties.INTPTLAT);
-            const lon = parseFloat(f.properties.INTPTLON);
-            if (isNaN(lat) || isNaN(lon)) return null;
-            const name =
-              f.properties.NAMELSAD || f.properties.NAME || f.properties.GEOID;
-            const value = getValue(f.properties);
-            return (
-              <Marker
-                key={i}
-                position={[lat, lon]}
-                icon={L.divIcon({
-                  className: "label-icon",
-                  html: `<div style="background: rgba(255,255,255,0.9); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: bold; border: 1px solid #333; white-space: nowrap;">${name}<br/><span style="color:#d33;">${value?.toFixed(
-                    1
-                  )}%</span></div>`,
-                })}
-              />
-            );
-          })}
+
           <Legend min={valueRange[0]} max={valueRange[1]} />
         </MapContainer>
       </div>
     </div>
   );
 }
+
 function GeoJSONLayer({ data, style, onEachFeature }: any) {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
 
   useEffect(() => {
-    if (!data) return;
+    if (!data || !map) return;
 
-    // Remove old layer if exists
+    // Remove existing layer
     if (layerRef.current) {
       map.removeLayer(layerRef.current);
+      layerRef.current = null;
     }
 
-    // Create and add new layer
+    // Create new layer
     const newLayer = L.geoJSON(data, { style, onEachFeature });
     newLayer.addTo(map);
 
-    //Recenter the map depending on county
-    if (data.features.length > 0) {
-      const bounds = newLayer.getBounds();
-      map.fitBounds(bounds);
+    // Fit bounds if there are features
+    if (data.features?.length > 0) {
+      map.fitBounds(newLayer.getBounds());
     }
 
+    // Save reference
     layerRef.current = newLayer;
 
-    // Clean up when unmounting or changing data
+    // Cleanup function
     return () => {
-      map.removeLayer(newLayer);
+      if (layerRef.current) {
+        map.removeLayer(layerRef.current);
+        layerRef.current = null;
+      }
     };
   }, [data, style, onEachFeature, map]);
 
