@@ -37,20 +37,20 @@ export function Legend({
       const HEIGHT = 22;
 
       const bucketColors = [
+        // 3 blues (dark → light)
         "#08306b",
-        "#08519c",
         "#2171b5",
-        "#6baed6",
         "#c6dbef",
+
+        // neutral
         "#ffffff",
+
+        // 3 reds (light → dark)
         "#fcbba1",
-        "#fc9272",
         "#fb6a4a",
-        "#de2d26",
         "#a50f15",
       ];
 
-      // Build color buckets
       const bucketsHTML = bucketColors
         .map(
           (color) =>

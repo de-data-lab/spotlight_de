@@ -11,7 +11,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { Legend } from "./Legend";
-
+import { TourProvider, useTour } from "@reactour/tour";
 type GeoFeature = {
   type: string;
   properties: { [key: string]: any };
@@ -22,6 +22,91 @@ type GeoData = {
   type: string;
   features: GeoFeature[];
 };
+const steps = [
+  {
+    selector: "#countySelect",
+    content: (
+      <>
+        <h3>Select a County</h3>
+        <p>
+          Choose a county to filter the map data, or select “All Counties” to
+          view statewide information.
+        </p>
+      </>
+    ),
+  },
+  {
+    selector: "#layerSelect",
+    content: (
+      <>
+        <h3>Choose Data Layer</h3>
+        <p>Pick the metric you want to explore on the map:</p>
+        <ul>
+          <li>Tax % Change – median changes in property taxes.</li>
+          <li>Assessment % Change – changes in property assessments.</li>
+          <li>Tax Burden % Change – changes in overall tax burden.</li>
+          <li>
+            Property Class – share of residential, commercial, and agricultural
+            properties.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    selector: ".leaflet-container",
+    content: (
+      <>
+        <h3>Map Area</h3>
+        <p>
+          Explore property data by region. Hover over areas to see detailed
+          info. Use zoom and pan to navigate.
+        </p>
+      </>
+    ),
+  },
+  {
+    selector: ".legend",
+    content: (
+      <>
+        <h3>Legend</h3>
+        <p>Colors indicate changes:</p>
+        <ul>
+          <li>Blue shades: decreases</li>
+          <li>White: no change</li>
+          <li>Red shades: increases</li>
+        </ul>
+      </>
+    ),
+  },
+];
+
+function TourButton() {
+  const { setIsOpen } = useTour();
+  return (
+    <button
+      style={{
+        position: "absolute",
+        top: 10,
+        right: 10,
+        zIndex: 1000,
+        backgroundColor: "#007bff", // bright blue background
+        color: "white", // white text
+        fontWeight: "bold",
+        fontSize: "14px",
+        padding: "8px 16px",
+        border: "none",
+        borderRadius: "4px",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+        cursor: "pointer",
+        userSelect: "none",
+      }}
+      onClick={() => setIsOpen(true)}
+    >
+      Show Tutorial
+    </button>
+  );
+}
 
 export default function DelawareMap() {
   const [geoData, setGeoData] = useState<GeoData | null>(null);
@@ -29,7 +114,8 @@ export default function DelawareMap() {
   const [selectedLayer, setSelectedLayer] = useState("tax_change");
   const [county, setCounty] = useState("all"); // default county
   const [valueRange, setValueRange] = useState<[number, number]>([0, 0]);
-
+  const { setIsOpen } = useTour();
+  const tour = useTour();
   // Load surrounding states mask
   useEffect(() => {
     fetch("/data/surrounding_states.json")
@@ -40,64 +126,101 @@ export default function DelawareMap() {
 
   const isValidFeature = (f: GeoFeature) => {
     const p = f.properties;
-    const fieldsToCheck = [
-      "tax_sum_2024",
-      "tax_sum_2025",
-      "assess_sum_2024",
-      "assess_sum_2025",
-      "tax_mean_2024",
-      "tax_mean_2025",
-      "tax_median_2024",
-      "tax_median_2025",
-      "assess_mean_2024",
-      "assess_mean_2025",
-      "assess_median_2024",
-      "assess_median_2025",
-      "tax_change_pct",
-      "assessment_change_pct",
-      "burden_2024",
-      "burden_2025",
-      "burden_change_pct",
-    ];
-    return fieldsToCheck.some((field) => p[field] != null);
+
+    switch (selectedLayer) {
+      case "tax_change":
+        return p.tax_change_pct != null || p.tax_change_pct_B != null;
+
+      case "assessment_change":
+        return (
+          p.assessment_change_pct != null || p.assessment_change_pct_B != null
+        );
+
+      case "tax_burden_change":
+        return (
+          p.burden_change != null ||
+          p.burden_change_pct != null ||
+          p.median_burden_2024 != null ||
+          p.median_burden_2025 != null
+        );
+
+      case "property_class":
+        return (
+          p.RES_share_2024 != null ||
+          p.COM_share_2024 != null ||
+          p.AGR_share_2024 != null
+        );
+
+      default:
+        return true;
+    }
   };
 
   // Load county data
   useEffect(() => {
     const fetchCountyData = async () => {
-      let url: string;
+      const loadLayer = async (countyName: string) => {
+        const res = await fetch(`/data/FE_${countyName}.json`);
+        const data = await res.json();
+
+        switch (selectedLayer) {
+          case "tax_change":
+            return data.layers?.tax_change || [];
+
+          case "assessment_change":
+            return data.layers?.assessment_change || [];
+
+          case "tax_burden_change":
+            return data.layers?.burden_change || [];
+
+          case "property_class":
+            return data.layers?.property_class || [];
+
+          default:
+            return [];
+        }
+      };
+
+      let mergedFeatures: any[] = [];
 
       if (county === "all") {
-        url = `/data/FE_statewide_tract_metrics.json`; // the combined JSON file
+        // Merge Sussex + Kent + New Castle
+        const counties = ["sussex", "kent", "newcastle"];
+
+        for (const c of counties) {
+          const features = await loadLayer(c);
+          mergedFeatures.push(...features);
+        }
       } else {
-        url = `/data/FE_${county}_tract_metrics.json`;
+        mergedFeatures = await loadLayer(county);
       }
-
-      const res = await fetch(url);
-      const data: GeoData = await res.json();
-
-      // Filter features to ensure we only show valid data
-      const filteredFeatures = data.features.filter(isValidFeature);
+      const filtered = mergedFeatures.filter(isValidFeature);
 
       setGeoData({
         type: "FeatureCollection",
-        features: filteredFeatures,
+        features: filtered,
       });
     };
 
     fetchCountyData().catch((err) =>
       console.error("Error loading GeoJSON:", err)
     );
-  }, [county]);
+  }, [county, selectedLayer]);
 
   const getValue = (p: Record<string, any>) => {
     switch (selectedLayer) {
       case "tax_change":
-        return p.tax_change_pct;
+        return p.tax_change_pct ?? p.tax_change_pct_B;
+
       case "assessment_change":
-        return p.assessment_change_pct;
+        return p.assessment_change_pct ?? p.assessment_change_pct_B;
+
       case "tax_burden_change":
-        return p.burden_change_pct;
+        return p.burden_change;
+
+      case "property_class":
+        return null;
+
       default:
         return null;
     }
@@ -118,33 +241,40 @@ export default function DelawareMap() {
   }, [geoData, selectedLayer]);
 
   const bucketColors = [
-    "#08306b",
-    "#08519c",
-    "#2171b5",
-    "#6baed6",
-    "#c6dbef",
-    "#ffffff",
-    "#fcbba1",
-    "#fc9272",
-    "#fb6a4a",
-    "#de2d26",
-    "#a50f15",
+    "#08306b", // strong decrease
+    "#2171b5", // moderate decrease
+    "#c6dbef", // mild decrease
+
+    "#ffffff", // neutral
+
+    "#fcbba1", // mild increase
+    "#fb6a4a", // moderate increase
+    "#a50f15", // strong increase
   ];
 
   const getColor = (value: number | null) => {
     if (value == null || isNaN(value)) return "#ccc";
-    const [minVal, maxVal] = valueRange;
-    if (Math.abs(value) < 1e-10) return "#ffffff";
 
+    const [minVal, maxVal] = valueRange;
+
+    if (Math.abs(value) < 1e-10) return bucketColors[3]; // white
+
+    // negative values → buckets 0–2
     if (value < 0) {
-      const t = value / minVal;
-      return bucketColors[Math.max(0, Math.min(4, Math.floor((1 - t) * 5)))];
+      // scale negative values into buckets 0–2
+      const t = value / minVal; // minVal is negative, so this is 0–1
+      const idx = Math.min(2, Math.max(0, Math.floor(t * 3)));
+      return bucketColors[idx];
     }
+
+    // positive values → buckets 4–6
     if (value > 0) {
-      const t = value / maxVal;
-      return bucketColors[Math.max(6, Math.min(10, 6 + Math.floor(t * 5)))];
+      const t = value / maxVal; // positive scale 0–1
+      const idx = 4 + Math.min(2, Math.max(0, Math.floor(t * 3)));
+      return bucketColors[idx];
     }
-    return "#ffffff";
+
+    return bucketColors[3]; // fallback to white
   };
 
   const style = (feature: GeoFeature) => ({
@@ -158,89 +288,135 @@ export default function DelawareMap() {
   const onEachFeature = (feature: GeoFeature, layer: L.Layer) => {
     const p = feature.properties;
 
-    let tooltipHTML: string;
+    let tooltipHTML = "";
 
-    if (selectedLayer === "assessment_change") {
-      const changePct =
+    // ----------------------------
+    // TAX % CHANGE
+    // ----------------------------
+    if (selectedLayer === "tax_change") {
+      const pct =
+        p.tax_change_pct != null ? p.tax_change_pct.toFixed(2) : "N/A";
+      const city = p.CITY_NAME || "Unknown community";
+      const tract = p.GEOID || "N/A";
+      const tax2024 =
+        p.median_tax_2024 != null
+          ? `$${p.median_tax_2024.toLocaleString()}`
+          : "N/A";
+      const tax2025 =
+        p.median_tax_2025 != null
+          ? `$${p.median_tax_2025.toLocaleString()}`
+          : "N/A";
+      const parcels =
+        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
+
+      tooltipHTML = `
+      <div style="font-size:13px">
+        <b>Tax % Change: ${pct}%</b><br/><br/>
+        In <b>${city}</b> (census tract ${tract}), the median percent change in taxes was <b>${pct}%</b>.<br/><br/>
+        In 2024, the median tax was ${tax2024}, and in 2025 it increased to ${tax2025}.<br/>
+        There were <b>${parcels}</b> comparable parcels in this tract.
+      </div>
+    `;
+    }
+
+    // ----------------------------
+    // ASSESSMENT % CHANGE
+    // ----------------------------
+    else if (selectedLayer === "assessment_change") {
+      const pct =
         p.assessment_change_pct != null
           ? p.assessment_change_pct.toFixed(2)
           : "N/A";
-      const cityName = p.CITY_NAME || "Unknown";
-      const tractID = p.GEOID || "N/A";
-      const avg2024 =
-        p.assess_mean_2024 != null
-          ? `$${p.assess_mean_2024.toLocaleString()}`
+      const city = p.CITY_NAME || "Unknown community";
+      const tract = p.GEOID || "N/A";
+      const a2024 =
+        p.median_assess_2024 != null
+          ? `$${p.median_assess_2024.toLocaleString()}`
           : "N/A";
-      const avg2025 =
-        p.assess_mean_2025 != null
-          ? `$${p.assess_mean_2025.toLocaleString()}`
-          : "N/A";
-      const parcels =
-        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
-
-      tooltipHTML = `
-      <div style="font-size:13px">
-        <b>Assessment Percent Change: ${changePct}%</b><br/><br/>
-        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
-        Avg Assessment 2024: ${avg2024}<br/>
-        Avg Assessment 2025: ${avg2025}<br/>
-        Parcels Compared: ${parcels}
-      </div>
-    `;
-    } else if (selectedLayer === "tax_burden_change") {
-      const changePct =
-        p.burden_change_pct != null ? p.burden_change_pct.toFixed(2) : "N/A";
-      const cityName = p.CITY_NAME || "Unknown";
-      const tractID = p.GEOID || "N/A";
-      const burden2024 =
-        p.burden_2024 != null ? `$${p.burden_2024.toLocaleString()}` : "N/A";
-      const burden2025 =
-        p.burden_2025 != null ? `$${p.burden_2025.toLocaleString()}` : "N/A";
-
-      tooltipHTML = `
-      <div style="font-size:13px">
-        <b>Tax Burden Change: ${changePct}%</b><br/><br/>
-        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
-        Tax Burden = total tax divided by total assessed value<br/>
-        Burden 2024: ${burden2024}<br/>
-        Burden 2025: ${burden2025}
-      </div>
-    `;
-    } else if (selectedLayer === "tax_change") {
-      const changePct =
-        p.tax_change_pct != null ? p.tax_change_pct.toFixed(2) : "N/A";
-      const cityName = p.CITY_NAME || "Unknown";
-      const tractID = p.GEOID || "N/A";
-      const tax2024 =
-        p.tax_mean_2024 != null
-          ? `$${p.tax_mean_2024.toLocaleString()}`
-          : "N/A";
-      const tax2025 =
-        p.tax_mean_2025 != null
-          ? `$${p.tax_mean_2025.toLocaleString()}`
+      const a2025 =
+        p.median_assess_2025 != null
+          ? `$${p.median_assess_2025.toLocaleString()}`
           : "N/A";
       const parcels =
         p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
 
       tooltipHTML = `
       <div style="font-size:13px">
-        <b>Tax Percent Change: ${changePct}%</b><br/><br/>
-        <b>${cityName}</b> - Census Tract ${tractID}<br/><br/>
-        Avg Tax 2024: ${tax2024}<br/>
-        Avg Tax 2025: ${tax2025}<br/>
-        Parcels Compared: ${parcels}
+        <b>Assessment % Change: ${pct}%</b><br/><br/>
+        In <b>${city}</b> (tract ${tract}), the median assessment changed by <b>${pct}%</b>.<br/><br/>
+        Median Assessment 2024: ${a2024}<br/>
+        Median Assessment 2025: ${a2025}<br/>
+        Parcels Compared: <b>${parcels}</b>
       </div>
     `;
-    } else {
-      const name = p.NAMELSAD || p.NAME || p.GEOID;
-      const value = getValue(p);
-      tooltipHTML = `<div style="font-size:13px"><b>${name}</b><br/>Change: ${
-        value?.toFixed(2) ?? "N/A"
-      }%</div>`;
     }
 
+    // ----------------------------
+    // TAX BURDEN % CHANGE
+    // ----------------------------
+    else if (selectedLayer === "tax_burden_change") {
+      const pct = p.burden_change != null ? p.burden_change.toFixed(2) : "N/A";
+      const city = p.CITY_NAME || "Unknown community";
+      const tract = p.GEOID || "N/A";
+      const b2024 =
+        p.median_burden_2024 != null ? p.median_burden_2024.toFixed(4) : "N/A";
+      const b2025 =
+        p.median_burden_2025 != null ? p.median_burden_2025.toFixed(4) : "N/A";
+      const parcels =
+        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
+
+      tooltipHTML = `
+      <div style="font-size:13px">
+        <b>Tax Burden % Change: ${pct}%</b><br/><br/>
+        In <b>${city}</b> (tract ${tract}), the median tax burden changed by <b>${pct}%</b>.<br/><br/>
+        Burden 2024: ${b2024}<br/>
+        Burden 2025: ${b2025}<br/>
+        Parcels Compared: <b>${parcels}</b>
+      </div>
+    `;
+    } else if (selectedLayer === "property_class") {
+      const fmt = (v: number | null) =>
+        v != null && !isNaN(v) ? (v * 100).toFixed(2) + "%" : "N/A";
+
+      const RES_2024 = fmt(p.RES_share_2024);
+      const RES_2025 = fmt(p.RES_share_2025);
+      const COM_2024 = fmt(p.COM_share_2024);
+      const COM_2025 = fmt(p.COM_share_2025);
+      const AGR_2024 = fmt(p.AGR_share_2024);
+      const AGR_2025 = fmt(p.AGR_share_2025);
+
+      const city = p.CITY_NAME || "Unknown community";
+      const tract = p.GEOID || "N/A";
+      const parcels =
+        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
+
+      tooltipHTML = `
+  <div style="font-size:13px">
+    <b>Property Class Composition Change</b><br/><br/>
+
+    <b>Residential share:</b> ${RES_2024} → ${RES_2025}<br/>
+    <b>Commercial share:</b> ${COM_2024} → ${COM_2025}<br/>
+    <b>Agricultural share:</b> ${AGR_2024} → ${AGR_2025}<br/><br/>
+
+    <i>${city}</i> (tract ${tract})<br/>
+    Parcels in this tract: <b>${parcels}</b>
+  </div>
+  `;
+    }
+
+    // fallback
+    else {
+      tooltipHTML = `
+      <div style="font-size:13px">
+        <b>${p.GEOID}</b><br/>
+        Change: ${getValue(p)?.toFixed(2) ?? "N/A"}%
+      </div>`;
+    }
+
+    // bind tooltip
     layer.bindTooltip(tooltipHTML, { sticky: true });
 
+    // hover styles
     layer.on({
       mouseover: (e: L.LeafletMouseEvent) => {
         (e.target as L.Path).setStyle({ weight: 4, color: "#000" });
@@ -252,156 +428,192 @@ export default function DelawareMap() {
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "10px 20px",
-          backgroundColor: "#fff",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-          zIndex: 1000,
+    <>
+      <TourProvider
+        steps={steps}
+        styles={{
+          popover: (base) => ({
+            ...base,
+            fontSize: "16px",
+            fontWeight: "600",
+            color: "#222",
+            backgroundColor: "#fff",
+            padding: "20px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            maxWidth: "320px",
+            lineHeight: "1.5",
+          }),
+          close: (base) => ({
+            ...base,
+            color: "#444",
+            fontWeight: "bold",
+            fontSize: "18px",
+          }),
         }}
       >
-        <img
-          src="https://i0.wp.com/spotlightdelaware.org/wp-content/uploads/2023/11/SpotlightIcon2-Damon-Martin.png"
-          alt="Logo"
-          style={{ height: 40, marginRight: 16 }}
-        />
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, color: "#555" }}>
-            Spotlight Delaware - Property Reassessment
-          </h1>
-          <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
-            An understanding of the reassessment process across Delaware
-            communities.
-          </p>
-        </div>
-      </header>
-
-      <div style={{ flex: 1, position: "relative" }}>
-        {/* Selectors */}
         <div
-          style={{
-            position: "absolute",
-            zIndex: 1000,
-            top: 10,
-            left: 10,
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            background: "white",
-            padding: "10px",
-            borderRadius: 4,
-            boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-            minWidth: "280px",
-          }}
+          style={{ height: "100vh", display: "flex", flexDirection: "column" }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <label
-              htmlFor="countySelect"
-              style={{
-                color: "#333",
-                fontWeight: "bold",
-                fontSize: "14px",
-                flexShrink: 0,
-              }}
-            >
-              Select County:
-            </label>
-            <select
-              id="countySelect"
-              value={county}
-              onChange={(e) => setCounty(e.target.value)}
-              style={{
-                flexGrow: 1,
-                padding: "6px 12px",
-                borderRadius: 4,
-                fontSize: 14,
-                border: "1px solid #ccc",
-                backgroundColor: "#fff",
-                color: "#333",
-              }}
-            >
-              <option value="all">All Counties</option>
-              <option value="sussex">Sussex</option>
-              <option value="newcastle">New Castle</option>
-              <option value="kent">Kent</option>
-            </select>
-          </div>
+          <header
+            style={{
+              display: "flex",
+              alignItems: "center",
+              padding: "10px 20px",
+              backgroundColor: "#fff",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              zIndex: 1000,
+            }}
+          >
+            <img
+              src="https://i0.wp.com/spotlightdelaware.org/wp-content/uploads/2023/11/SpotlightIcon2-Damon-Martin.png"
+              alt="Logo"
+              style={{ height: 40, marginRight: 16 }}
+            />
+            <div>
+              <h1 style={{ margin: 0, fontSize: 20, color: "#555" }}>
+                Spotlight Delaware - Property Reassessment
+              </h1>
+              <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
+                An understanding of the reassessment process across Delaware
+                communities.
+              </p>
+            </div>
+            {/* Add a button to trigger the tour */}
+            <TourButton />
+          </header>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <label
-              htmlFor="layerSelect"
+          <div style={{ flex: 1, position: "relative" }}>
+            {/* Selectors */}
+            <div
               style={{
-                color: "#333",
-                fontWeight: "bold",
-                fontSize: "14px",
-                flexShrink: 0,
-              }}
-            >
-              View by:
-            </label>
-            <select
-              id="layerSelect"
-              value={selectedLayer}
-              onChange={(e) => setSelectedLayer(e.target.value)}
-              style={{
-                flexGrow: 1,
-                padding: "6px 12px",
+                position: "absolute",
+                zIndex: 1000,
+                top: 10,
+                left: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                background: "white",
+                padding: "10px",
                 borderRadius: 4,
-                fontSize: 14,
-                border: "1px solid #ccc",
-                backgroundColor: "#fff",
-                color: "#333",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                minWidth: "280px",
               }}
             >
-              <option value="tax_change">Tax % Change</option>
-              <option value="assessment_change">Assessment % Change</option>
-              <option value="tax_burden_change">Tax Burden % Change</option>
-            </select>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <label
+                  htmlFor="countySelect"
+                  style={{
+                    color: "#333",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                    flexShrink: 0,
+                  }}
+                >
+                  Select County:
+                </label>
+                <select
+                  id="countySelect"
+                  value={county}
+                  onChange={(e) => setCounty(e.target.value)}
+                  style={{
+                    flexGrow: 1,
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    fontSize: 14,
+                    border: "1px solid #ccc",
+                    backgroundColor: "#fff",
+                    color: "#333",
+                  }}
+                >
+                  <option value="all">All Counties</option>
+                  <option value="sussex">Sussex</option>
+                  <option value="newcastle">New Castle</option>
+                  <option value="kent">Kent</option>
+                </select>
+              </div>
+
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <label
+                  htmlFor="layerSelect"
+                  style={{
+                    color: "#333",
+                    fontWeight: "bold",
+                    fontSize: "14px",
+                    flexShrink: 0,
+                  }}
+                >
+                  View by:
+                </label>
+                <select
+                  id="layerSelect"
+                  value={selectedLayer}
+                  onChange={(e) => setSelectedLayer(e.target.value)}
+                  style={{
+                    flexGrow: 1,
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    fontSize: 14,
+                    border: "1px solid #ccc",
+                    backgroundColor: "#fff",
+                    color: "#333",
+                  }}
+                >
+                  <option value="tax_change">Tax % Change</option>
+                  <option value="assessment_change">Assessment % Change</option>
+                  <option value="tax_burden_change">Tax Burden % Change</option>
+                  <option value="property_class">Property Class</option>
+                </select>
+              </div>
+            </div>
+
+            <MapContainer
+              center={[39.0, -75.5]}
+              zoom={9}
+              scrollWheelZoom
+              style={{ height: "100%", width: "100%" }}
+              zoomControl={false}
+              id="mapContainer"
+            >
+              <TileLayer
+                attribution="&copy; OpenStreetMap contributors"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <ZoomControl position="bottomleft" />
+
+              {/* Greyed-out surrounding states */}
+              {maskData && (
+                <GeoJSON
+                  data={maskData as GeoJSON.FeatureCollection}
+                  style={{
+                    fillColor: "#ccc",
+                    fillOpacity: 0.6,
+                    color: "#666",
+                    weight: 1,
+                  }}
+                />
+              )}
+
+              {/* Delaware tracts */}
+              {geoData && (
+                <GeoJSONLayer
+                  data={geoData}
+                  style={style}
+                  onEachFeature={onEachFeature}
+                />
+              )}
+
+              <Legend min={valueRange[0]} max={valueRange[1]} />
+            </MapContainer>
           </div>
         </div>
-
-        <MapContainer
-          center={[39.0, -75.5]}
-          zoom={9}
-          scrollWheelZoom
-          style={{ height: "100%", width: "100%" }}
-          zoomControl={false}
-        >
-          <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <ZoomControl position="bottomleft" />
-
-          {/* Greyed-out surrounding states */}
-          {maskData && (
-            <GeoJSON
-              data={maskData as GeoJSON.FeatureCollection}
-              style={{
-                fillColor: "#ccc",
-                fillOpacity: 0.6,
-                color: "#666",
-                weight: 1,
-              }}
-            />
-          )}
-
-          {/* Delaware tracts */}
-          {geoData && (
-            <GeoJSONLayer
-              data={geoData}
-              style={style}
-              onEachFeature={onEachFeature}
-            />
-          )}
-
-          <Legend min={valueRange[0]} max={valueRange[1]} />
-        </MapContainer>
-      </div>
-    </div>
+      </TourProvider>
+    </>
   );
 }
 
