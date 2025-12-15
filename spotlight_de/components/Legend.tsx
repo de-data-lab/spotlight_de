@@ -7,13 +7,17 @@ import { useEffect } from "react";
 interface LegendProps {
   min: number;
   max: number;
+  center: number;
   infoText?: string;
+  title?: string;
 }
 
 export function Legend({
   min,
   max,
   infoText = "Larger decreases are shown in blue, larger increases in red.",
+  center,
+  title = "Legend",
 }: LegendProps) {
   const map = useMap();
 
@@ -51,6 +55,33 @@ export function Legend({
         "#a50f15",
       ];
 
+      const CENTER_BAND_FRACTION = 0.1; // 10% of total range
+      const centerHalfWidth = ((max - min) * CENTER_BAND_FRACTION) / 2;
+
+      const centerMin = center - centerHalfWidth;
+      const centerMax = center + centerHalfWidth;
+
+      // Compute bucket ranges
+      const bucketCount = bucketColors.length;
+      const bucketRanges: [number, number][] = [];
+
+      // 3 below-center buckets
+      for (let i = 0; i < 3; i++) {
+        const start = min + (i / 3) * (centerMin - min);
+        const end = min + ((i + 1) / 3) * (centerMin - min);
+        bucketRanges.push([start, end]);
+      }
+
+      // center (white) bucket — REAL RANGE
+      bucketRanges.push([centerMin, centerMax]);
+
+      // 3 above-center buckets
+      for (let i = 0; i < 3; i++) {
+        const start = centerMax + (i / 3) * (max - centerMax);
+        const end = centerMax + ((i + 1) / 3) * (max - centerMax);
+        bucketRanges.push([start, end]);
+      }
+
       const bucketsHTML = bucketColors
         .map(
           (color) =>
@@ -61,7 +92,7 @@ export function Legend({
       div.innerHTML = `
         <!-- Title Row -->
         <div style="display:flex; align-items:center; margin-bottom:8px;">
-          <div style="font-weight:bold; font-size:14px;">Percentage Change (%)</div>
+<div style="font-weight:bold; font-size:14px;">${title}</div>
           <div id="legend-info" 
             style="
               margin-left:6px;
@@ -111,7 +142,7 @@ export function Legend({
             cursor:crosshair;
             display:flex;
             border-radius:4px;
-            overflow:hidden;
+            overflow:visible;
           "
         >
           ${bucketsHTML}
@@ -157,12 +188,23 @@ export function Legend({
         const rect = gradient.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const pos = Math.max(0, Math.min(x, WIDTH));
-        const t = pos / WIDTH;
-        const val = min + t * (max - min);
 
+        const t = pos / WIDTH;
+        const bucketIndex = Math.floor(t * bucketCount);
+
+        // Move the indicator
         indicator.style.left = `${pos - 1}px`;
         tooltip.style.left = `${pos}px`;
-        tooltip.textContent = val.toFixed(2) + "%";
+
+        if (bucketIndex >= 0 && bucketIndex < bucketCount) {
+          const [rangeMin, rangeMax] = bucketRanges[bucketIndex];
+          tooltip.textContent = `${rangeMin.toFixed(2)}% → ${rangeMax.toFixed(
+            2
+          )}%`;
+        } else {
+          tooltip.textContent = "";
+        }
+
         indicator.style.opacity = "1";
         tooltip.style.opacity = "1";
       };
@@ -203,7 +245,7 @@ export function Legend({
       const div = (legend.getContainer() as any)?._cleanup;
       if (div) div();
     };
-  }, [map, min, max, infoText]);
+  }, [map, min, max, center, infoText]);
 
   return null;
 }

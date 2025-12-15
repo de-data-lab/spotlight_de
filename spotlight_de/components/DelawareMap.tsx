@@ -114,8 +114,22 @@ export default function DelawareMap() {
   const [selectedLayer, setSelectedLayer] = useState("tax_change");
   const [county, setCounty] = useState("all"); // default county
   const [valueRange, setValueRange] = useState<[number, number]>([0, 0]);
+  const [centerValue, setCenterValue] = useState<number>(0);
+
   const { setIsOpen } = useTour();
   const tour = useTour();
+
+  const legendTitle =
+    selectedLayer === "tax_change"
+      ? "Tax % Change"
+      : selectedLayer === "assessment_change"
+      ? "Assessment % Change"
+      : selectedLayer === "tax_burden_change"
+      ? "Tax Burden % Change"
+      : selectedLayer === "property_class"
+      ? "Property Class Composition"
+      : "Legend";
+
   // Load surrounding states mask
   useEffect(() => {
     fetch("/data/surrounding_states.json")
@@ -229,15 +243,26 @@ export default function DelawareMap() {
   // Compute dynamic range
   useEffect(() => {
     if (!geoData?.features) return;
+
     const values = geoData.features
       .map((f) => getValue(f.properties))
-      .filter((v) => v != null && !isNaN(v));
+      .filter((v): v is number => v != null && !isNaN(v))
+      .sort((a, b) => a - b);
 
-    if (values.length > 0) {
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      setValueRange([min === max ? min - 1 : min, min === max ? max + 1 : max]);
-    }
+    if (values.length === 0) return;
+
+    const min = values[0];
+    const max = values[values.length - 1];
+
+    // --- MEDIAN ---
+    const mid = Math.floor(values.length / 2);
+    const median =
+      values.length % 2 === 0
+        ? (values[mid - 1] + values[mid]) / 2
+        : values[mid];
+
+    setValueRange([min, max]);
+    setCenterValue(median);
   }, [geoData, selectedLayer]);
 
   const bucketColors = [
@@ -256,25 +281,28 @@ export default function DelawareMap() {
     if (value == null || isNaN(value)) return "#ccc";
 
     const [minVal, maxVal] = valueRange;
+    const mid = centerValue;
 
-    if (Math.abs(value) < 1e-10) return bucketColors[3]; // white
+    // tolerance so "near the middle" is white
+    const EPS = (maxVal - minVal) * 0.02; // ~2% of range
 
-    // negative values → buckets 0–2
-    if (value < 0) {
-      // scale negative values into buckets 0–2
-      const t = value / minVal; // minVal is negative, so this is 0–1
-      const idx = Math.min(2, Math.max(0, Math.floor(t * 3)));
-      return bucketColors[idx];
+    const centerHalfWidth = (valueRange[1] - valueRange[0]) * 0.05;
+
+    if (Math.abs(value - centerValue) <= centerHalfWidth) {
+      return bucketColors[3]; // white
     }
 
-    // positive values → buckets 4–6
-    if (value > 0) {
-      const t = value / maxVal; // positive scale 0–1
-      const idx = 4 + Math.min(2, Math.max(0, Math.floor(t * 3)));
-      return bucketColors[idx];
+    // BELOW median → blues
+    if (value < mid) {
+      const t = (value - minVal) / (mid - minVal); // 0 → 1
+      const idx = Math.floor(t * 3);
+      return bucketColors[Math.min(2, Math.max(0, idx))];
     }
 
-    return bucketColors[3]; // fallback to white
+    // ABOVE median → reds
+    const t = (value - mid) / (maxVal - mid); // 0 → 1
+    const idx = 4 + Math.floor(t * 3);
+    return bucketColors[Math.min(6, Math.max(4, idx))];
   };
 
   const style = (feature: GeoFeature) => ({
@@ -358,10 +386,11 @@ export default function DelawareMap() {
       const pct = p.burden_change != null ? p.burden_change.toFixed(2) : "N/A";
       const city = p.CITY_NAME || "Unknown community";
       const tract = p.GEOID || "N/A";
-      const b2024 =
-        p.median_burden_2024 != null ? p.median_burden_2024.toFixed(4) : "N/A";
-      const b2025 =
-        p.median_burden_2025 != null ? p.median_burden_2025.toFixed(4) : "N/A";
+      const fmtPct = (v: number | null) =>
+        v != null && !isNaN(v) ? `${(v * 100).toFixed(2)}%` : "N/A";
+
+      const b2024 = fmtPct(p.median_burden_2024);
+      const b2025 = fmtPct(p.median_burden_2025);
       const parcels =
         p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
 
@@ -608,7 +637,12 @@ export default function DelawareMap() {
                 />
               )}
 
-              <Legend min={valueRange[0]} max={valueRange[1]} />
+              <Legend
+                min={valueRange[0]}
+                max={valueRange[1]}
+                center={centerValue}
+                title={legendTitle}
+              />
             </MapContainer>
           </div>
         </div>
