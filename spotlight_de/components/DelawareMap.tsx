@@ -73,7 +73,6 @@ const steps = [
         <p>Colors indicate changes:</p>
         <ul>
           <li>Blue shades: decreases</li>
-          <li>White: no change</li>
           <li>Red shades: increases</li>
         </ul>
       </>
@@ -283,14 +282,8 @@ export default function DelawareMap() {
     const [minVal, maxVal] = valueRange;
     const mid = centerValue;
 
-    // tolerance so "near the middle" is white
-    const EPS = (maxVal - minVal) * 0.02; // ~2% of range
-
-    const centerHalfWidth = (valueRange[1] - valueRange[0]) * 0.05;
-
-    if (Math.abs(value - centerValue) <= centerHalfWidth) {
-      return bucketColors[3]; // white
-    }
+    // EXACT median → white
+    if (value === mid) return bucketColors[3];
 
     // BELOW median → blues
     if (value < mid) {
@@ -341,7 +334,7 @@ export default function DelawareMap() {
       <div style="font-size:13px">
         <b>Tax % Change: ${pct}%</b><br/><br/>
         In <b>${city}</b> (census tract ${tract}), the median percent change in taxes was <b>${pct}%</b>.<br/><br/>
-        In 2024, the median tax was ${tax2024}, and in 2025 it increased to ${tax2025}.<br/>
+        In 2024, the median tax was ${tax2024}, and in 2025 it changed to ${tax2025}.<br/>
         There were <b>${parcels}</b> comparable parcels in this tract.
       </div>
     `;

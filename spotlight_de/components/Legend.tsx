@@ -15,8 +15,8 @@ interface LegendProps {
 export function Legend({
   min,
   max,
-  infoText = "Larger decreases are shown in blue, larger increases in red.",
   center,
+  infoText = "Larger decreases are shown in blue, larger increases in red.",
   title = "Legend",
 }: LegendProps) {
   const map = useMap();
@@ -24,7 +24,6 @@ export function Legend({
   useEffect(() => {
     if (!map) return;
 
-    // Create legend control
     const legend = new L.Control({ position: "bottomright" });
 
     legend.onAdd = () => {
@@ -40,45 +39,29 @@ export function Legend({
       const WIDTH = 300;
       const HEIGHT = 22;
 
+      // Only blue (3 shades) and red (3 shades)
       const bucketColors = [
-        // 3 blues (dark → light)
-        "#08306b",
-        "#2171b5",
-        "#c6dbef",
-
-        // neutral
-        "#ffffff",
-
-        // 3 reds (light → dark)
-        "#fcbba1",
-        "#fb6a4a",
-        "#a50f15",
+        "#08306b", // dark blue
+        "#2171b5", // medium blue
+        "#c6dbef", // light blue
+        "#fcbba1", // light red
+        "#fb6a4a", // medium red
+        "#a50f15", // dark red
       ];
 
-      const CENTER_BAND_FRACTION = 0.1; // 10% of total range
-      const centerHalfWidth = ((max - min) * CENTER_BAND_FRACTION) / 2;
-
-      const centerMin = center - centerHalfWidth;
-      const centerMax = center + centerHalfWidth;
-
-      // Compute bucket ranges
+      // Compute bucket ranges (linear interpolation)
       const bucketCount = bucketColors.length;
       const bucketRanges: [number, number][] = [];
 
-      // 3 below-center buckets
-      for (let i = 0; i < 3; i++) {
-        const start = min + (i / 3) * (centerMin - min);
-        const end = min + ((i + 1) / 3) * (centerMin - min);
+      const half = bucketCount / 2;
+      for (let i = 0; i < half; i++) {
+        const start = min + (i / half) * (center - min);
+        const end = min + ((i + 1) / half) * (center - min);
         bucketRanges.push([start, end]);
       }
-
-      // center (white) bucket — REAL RANGE
-      bucketRanges.push([centerMin, centerMax]);
-
-      // 3 above-center buckets
-      for (let i = 0; i < 3; i++) {
-        const start = centerMax + (i / 3) * (max - centerMax);
-        const end = centerMax + ((i + 1) / 3) * (max - centerMax);
+      for (let i = 0; i < half; i++) {
+        const start = center + (i / half) * (max - center);
+        const end = center + ((i + 1) / half) * (max - center);
         bucketRanges.push([start, end]);
       }
 
@@ -92,7 +75,7 @@ export function Legend({
       div.innerHTML = `
         <!-- Title Row -->
         <div style="display:flex; align-items:center; margin-bottom:8px;">
-<div style="font-weight:bold; font-size:14px;">${title}</div>
+          <div style="font-weight:bold; font-size:14px;">${title}</div>
           <div id="legend-info" 
             style="
               margin-left:6px;
@@ -157,21 +140,6 @@ export function Legend({
               pointer-events:none;
             "
           ></div>
-          <div id="legend-tooltip"
-            style="
-              position:absolute;
-              top:-28px;
-              padding:2px 6px;
-              background:black;
-              color:white;
-              font-size:11px;
-              border-radius:3px;
-              white-space:nowrap;
-              opacity:0;
-              transform:translateX(-50%);
-              pointer-events:none;
-            "
-          ></div>
         </div>
       `;
 
@@ -184,38 +152,37 @@ export function Legend({
       )!;
 
       // Gradient hover
-      const onMove = (e: MouseEvent) => {
-        const rect = gradient.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const pos = Math.max(0, Math.min(x, WIDTH));
+      // const onMove = (e: MouseEvent) => {
+      //   const rect = gradient.getBoundingClientRect();
+      //   const x = e.clientX - rect.left;
+      //   const pos = Math.max(0, Math.min(x, WIDTH));
 
-        const t = pos / WIDTH;
-        const bucketIndex = Math.floor(t * bucketCount);
+      //   const t = pos / WIDTH;
+      //   const bucketIndex = Math.floor(t * bucketCount);
 
-        // Move the indicator
-        indicator.style.left = `${pos - 1}px`;
-        tooltip.style.left = `${pos}px`;
+      //   indicator.style.left = `${pos - 1}px`;
+      //   tooltip.style.left = `${pos}px`;
 
-        if (bucketIndex >= 0 && bucketIndex < bucketCount) {
-          const [rangeMin, rangeMax] = bucketRanges[bucketIndex];
-          tooltip.textContent = `${rangeMin.toFixed(2)}% → ${rangeMax.toFixed(
-            2
-          )}%`;
-        } else {
-          tooltip.textContent = "";
-        }
+      //   if (bucketIndex >= 0 && bucketIndex < bucketCount) {
+      //     const [rangeMin, rangeMax] = bucketRanges[bucketIndex];
+      //     tooltip.textContent = `${rangeMin.toFixed(2)}% → ${rangeMax.toFixed(
+      //       2
+      //     )}%`;
+      //   } else {
+      //     tooltip.textContent = "";
+      //   }
 
-        indicator.style.opacity = "1";
-        tooltip.style.opacity = "1";
-      };
+      //   indicator.style.opacity = "1";
+      //   tooltip.style.opacity = "1";
+      // };
 
-      const onLeave = () => {
-        indicator.style.opacity = "0";
-        tooltip.style.opacity = "0";
-      };
+      // const onLeave = () => {
+      //   indicator.style.opacity = "0";
+      //   tooltip.style.opacity = "0";
+      // };
 
-      gradient.addEventListener("mousemove", onMove);
-      gradient.addEventListener("mouseleave", onLeave);
+      // gradient.addEventListener("mousemove", onMove);
+      // gradient.addEventListener("mouseleave", onLeave);
 
       // Info tooltip hover
       const onInfoEnter = () => (infoTooltip.style.opacity = "1");
@@ -223,15 +190,13 @@ export function Legend({
       info.addEventListener("mouseenter", onInfoEnter);
       info.addEventListener("mouseleave", onInfoLeave);
 
-      // Cleanup event listeners when legend is removed
+      // Cleanup
       const cleanup = () => {
-        gradient.removeEventListener("mousemove", onMove);
-        gradient.removeEventListener("mouseleave", onLeave);
+        // gradient.removeEventListener("mousemove", onMove);
+        // gradient.removeEventListener("mouseleave", onLeave);
         info.removeEventListener("mouseenter", onInfoEnter);
         info.removeEventListener("mouseleave", onInfoLeave);
       };
-
-      // Attach cleanup to the div so React/Leaflet can remove it safely
       (div as any)._cleanup = cleanup;
 
       return div;
@@ -241,11 +206,10 @@ export function Legend({
 
     return () => {
       legend.remove();
-      // Call internal cleanup for event listeners
       const div = (legend.getContainer() as any)?._cleanup;
       if (div) div();
     };
-  }, [map, min, max, center, infoText]);
+  }, [map, min, max, title, infoText]);
 
   return null;
 }
