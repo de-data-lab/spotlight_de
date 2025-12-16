@@ -22,6 +22,72 @@ type GeoData = {
   type: string;
   features: GeoFeature[];
 };
+type Bucket = {
+  min: number;
+  max: number;
+  color: string;
+};
+
+const BUCKETS: Record<string, Record<string, Bucket[]>> = {
+  tax_change: {
+    statewide: [
+      { min: -36.3, max: -13, color: "#08306b" },
+      { min: -13, max: 11, color: "#2171b5" },
+      { min: 11, max: 33.2, color: "#c6dbef" },
+      { min: 33.2, max: 44.2, color: "#fcbba1" },
+      { min: 44.2, max: 90.5, color: "#fb6a4a" },
+      { min: 90.5, max: 531.2, color: "#a50f15" },
+    ],
+    kent: [
+      { min: 2, max: 10, color: "#08306b" },
+      { min: 10, max: 16.5, color: "#2171b5" },
+      { min: 16.5, max: 33.1, color: "#c6dbef" },
+      { min: 33.1, max: 40, color: "#fcbba1" },
+      { min: 40, max: 75.7, color: "#fb6a4a" },
+      { min: 75.7, max: 137.7, color: "#a50f15" },
+    ],
+    sussex: [
+      { min: -36.3, max: -20, color: "#08306b" },
+      { min: -20, max: -7.7, color: "#2171b5" },
+      { min: -7.7, max: 14.1, color: "#c6dbef" },
+      { min: 14.1, max: 29.6, color: "#fcbba1" },
+      { min: 29.6, max: 78.6, color: "#fb6a4a" },
+      { min: 78.6, max: 147.1, color: "#a50f15" },
+    ],
+    newcastle: [
+      { min: -5, max: 10, color: "#08306b" },
+      { min: 10, max: 25, color: "#2171b5" },
+      { min: 25, max: 43.0, color: "#c6dbef" },
+      { min: 43.0, max: 48, color: "#fcbba1" },
+      { min: 48, max: 100.7, color: "#fb6a4a" },
+      { min: 100.7, max: 531.2, color: "#a50f15" },
+    ],
+  },
+
+  assessment_change: {
+    statewide: [
+      { min: 300.9, max: 472.4, color: "#08306b" },
+      { min: 472.4, max: 568.0, color: "#2171b5" },
+      { min: 568.0, max: 1020.4, color: "#c6dbef" },
+      { min: 1020.4, max: 1696.4, color: "#fcbba1" },
+      { min: 1696.4, max: 2570.8, color: "#fb6a4a" },
+      { min: 2570.8, max: 5890.5, color: "#a50f15" },
+    ],
+    // Kent / Sussex / New Castle follow same pattern
+  },
+
+  tax_burden_change: {
+    statewide: [
+      { min: -96.01, max: -93.26, color: "#08306b" },
+      { min: -93.26, max: -82.95, color: "#2171b5" },
+      { min: -82.95, max: -79.16, color: "#c6dbef" },
+      { min: -79.16, max: -76.42, color: "#fcbba1" },
+      { min: -76.42, max: -75.7, color: "#fb6a4a" },
+      { min: -75.7, max: -75.1, color: "#a50f15" },
+    ],
+  },
+};
+
 const steps = [
   {
     selector: "#countySelect",
@@ -45,10 +111,6 @@ const steps = [
           <li>Tax % Change – median changes in property taxes.</li>
           <li>Assessment % Change – changes in property assessments.</li>
           <li>Tax Burden % Change – changes in overall tax burden.</li>
-          <li>
-            Property Class – share of residential, commercial, and agricultural
-            properties.
-          </li>
         </ul>
       </>
     ),
@@ -115,9 +177,6 @@ export default function DelawareMap() {
   const [valueRange, setValueRange] = useState<[number, number]>([0, 0]);
   const [centerValue, setCenterValue] = useState<number>(0);
 
-  const { setIsOpen } = useTour();
-  const tour = useTour();
-
   const legendTitle =
     selectedLayer === "tax_change"
       ? "Tax % Change"
@@ -125,8 +184,6 @@ export default function DelawareMap() {
       ? "Assessment % Change"
       : selectedLayer === "tax_burden_change"
       ? "Tax Burden % Change"
-      : selectedLayer === "property_class"
-      ? "Property Class Composition"
       : "Legend";
 
   // Load surrounding states mask
@@ -156,14 +213,6 @@ export default function DelawareMap() {
           p.median_burden_2024 != null ||
           p.median_burden_2025 != null
         );
-
-      case "property_class":
-        return (
-          p.RES_share_2024 != null ||
-          p.COM_share_2024 != null ||
-          p.AGR_share_2024 != null
-        );
-
       default:
         return true;
     }
@@ -185,10 +234,6 @@ export default function DelawareMap() {
 
           case "tax_burden_change":
             return data.layers?.burden_change || [];
-
-          case "property_class":
-            return data.layers?.property_class || [];
-
           default:
             return [];
         }
@@ -230,9 +275,6 @@ export default function DelawareMap() {
 
       case "tax_burden_change":
         return p.burden_change;
-
-      case "property_class":
-        return null;
 
       default:
         return null;
@@ -279,23 +321,15 @@ export default function DelawareMap() {
   const getColor = (value: number | null) => {
     if (value == null || isNaN(value)) return "#ccc";
 
-    const [minVal, maxVal] = valueRange;
-    const mid = centerValue;
+    const regionKey = county === "all" ? "statewide" : county;
 
-    // EXACT median → white
-    if (value === mid) return bucketColors[3];
+    const layerBuckets = BUCKETS[selectedLayer]?.[regionKey];
 
-    // BELOW median → blues
-    if (value < mid) {
-      const t = (value - minVal) / (mid - minVal); // 0 → 1
-      const idx = Math.floor(t * 3);
-      return bucketColors[Math.min(2, Math.max(0, idx))];
-    }
+    if (!layerBuckets) return "#ccc";
 
-    // ABOVE median → reds
-    const t = (value - mid) / (maxVal - mid); // 0 → 1
-    const idx = 4 + Math.floor(t * 3);
-    return bucketColors[Math.min(6, Math.max(4, idx))];
+    const bucket = layerBuckets.find((b) => value >= b.min && value < b.max);
+
+    return bucket?.color ?? "#ccc";
   };
 
   const style = (feature: GeoFeature) => ({
@@ -321,12 +355,20 @@ export default function DelawareMap() {
       const tract = p.GEOID || "N/A";
       const tax2024 =
         p.median_tax_2024 != null
-          ? `$${p.median_tax_2024.toLocaleString()}`
+          ? `$${p.median_tax_2024.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`
           : "N/A";
+
       const tax2025 =
         p.median_tax_2025 != null
-          ? `$${p.median_tax_2025.toLocaleString()}`
+          ? `$${p.median_tax_2025.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`
           : "N/A";
+
       const parcels =
         p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
 
@@ -396,34 +438,6 @@ export default function DelawareMap() {
         Parcels Compared: <b>${parcels}</b>
       </div>
     `;
-    } else if (selectedLayer === "property_class") {
-      const fmt = (v: number | null) =>
-        v != null && !isNaN(v) ? (v * 100).toFixed(2) + "%" : "N/A";
-
-      const RES_2024 = fmt(p.RES_share_2024);
-      const RES_2025 = fmt(p.RES_share_2025);
-      const COM_2024 = fmt(p.COM_share_2024);
-      const COM_2025 = fmt(p.COM_share_2025);
-      const AGR_2024 = fmt(p.AGR_share_2024);
-      const AGR_2025 = fmt(p.AGR_share_2025);
-
-      const city = p.CITY_NAME || "Unknown community";
-      const tract = p.GEOID || "N/A";
-      const parcels =
-        p.parcel_count != null ? p.parcel_count.toLocaleString() : "N/A";
-
-      tooltipHTML = `
-  <div style="font-size:13px">
-    <b>Property Class Composition Change</b><br/><br/>
-
-    <b>Residential share:</b> ${RES_2024} → ${RES_2025}<br/>
-    <b>Commercial share:</b> ${COM_2024} → ${COM_2025}<br/>
-    <b>Agricultural share:</b> ${AGR_2024} → ${AGR_2025}<br/><br/>
-
-    <i>${city}</i> (tract ${tract})<br/>
-    Parcels in this tract: <b>${parcels}</b>
-  </div>
-  `;
     }
 
     // fallback
@@ -589,7 +603,7 @@ export default function DelawareMap() {
                   <option value="tax_change">Tax % Change</option>
                   <option value="assessment_change">Assessment % Change</option>
                   <option value="tax_burden_change">Tax Burden % Change</option>
-                  <option value="property_class">Property Class</option>
+                  {/* <option value="property_class">Property Class</option> */}
                 </select>
               </div>
             </div>
