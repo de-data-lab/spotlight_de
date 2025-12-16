@@ -29,6 +29,9 @@ type Bucket = {
 };
 
 const BUCKETS: Record<string, Record<string, Bucket[]>> = {
+  // --------------------------------------------------
+  // TAX CHANGE
+  // --------------------------------------------------
   tax_change: {
     statewide: [
       { min: -36.3, max: -13, color: "#08306b" },
@@ -64,6 +67,9 @@ const BUCKETS: Record<string, Record<string, Bucket[]>> = {
     ],
   },
 
+  // --------------------------------------------------
+  // ASSESSMENT CHANGE
+  // --------------------------------------------------
   assessment_change: {
     statewide: [
       { min: 300.9, max: 472.4, color: "#08306b" },
@@ -73,9 +79,35 @@ const BUCKETS: Record<string, Record<string, Bucket[]>> = {
       { min: 1696.4, max: 2570.8, color: "#fb6a4a" },
       { min: 2570.8, max: 5890.5, color: "#a50f15" },
     ],
-    // Kent / Sussex / New Castle follow same pattern
+    kent: [
+      { min: 461.6, max: 613.3, color: "#08306b" },
+      { min: 613.3, max: 702.4, color: "#2171b5" },
+      { min: 702.4, max: 835.6, color: "#c6dbef" },
+      { min: 835.6, max: 900.0, color: "#fcbba1" },
+      { min: 900.0, max: 1273.0, color: "#fb6a4a" },
+      { min: 1273.0, max: 3716.5, color: "#a50f15" },
+    ],
+    sussex: [
+      { min: 1191.8, max: 1728.4, color: "#08306b" },
+      { min: 1728.4, max: 1884.0, color: "#2171b5" },
+      { min: 1884.0, max: 2124.7, color: "#c6dbef" },
+      { min: 2124.7, max: 2500.0, color: "#fcbba1" },
+      { min: 2500.0, max: 3842.0, color: "#fb6a4a" },
+      { min: 3842.0, max: 5890.5, color: "#a50f15" },
+    ],
+    newcastle: [
+      { min: 300.9, max: 434.8, color: "#08306b" },
+      { min: 434.8, max: 482.3, color: "#2171b5" },
+      { min: 482.3, max: 505.5, color: "#c6dbef" },
+      { min: 505.5, max: 528.5, color: "#fcbba1" },
+      { min: 528.5, max: 728.3, color: "#fb6a4a" },
+      { min: 728.3, max: 2062.2, color: "#a50f15" },
+    ],
   },
 
+  // --------------------------------------------------
+  // TAX BURDEN CHANGE
+  // --------------------------------------------------
   tax_burden_change: {
     statewide: [
       { min: -96.01, max: -93.26, color: "#08306b" },
@@ -83,6 +115,30 @@ const BUCKETS: Record<string, Record<string, Bucket[]>> = {
       { min: -82.95, max: -79.16, color: "#c6dbef" },
       { min: -79.16, max: -76.42, color: "#fcbba1" },
       { min: -76.42, max: -75.7, color: "#fb6a4a" },
+      { min: -75.7, max: -75.1, color: "#a50f15" },
+    ],
+    kent: [
+      { min: -84.84, max: -84.37, color: "#08306b" },
+      { min: -84.37, max: -83.99, color: "#2171b5" },
+      { min: -83.99, max: -83.1, color: "#c6dbef" },
+      { min: -83.1, max: -80.76, color: "#fcbba1" },
+      { min: -80.76, max: -80.72, color: "#fb6a4a" },
+      { min: -80.72, max: -80.67, color: "#a50f15" },
+    ],
+    sussex: [
+      { min: -96.01, max: -95.72, color: "#08306b" },
+      { min: -95.72, max: -94.83, color: "#2171b5" },
+      { min: -94.83, max: -94.75, color: "#c6dbef" },
+      { min: -94.75, max: -94.41, color: "#fcbba1" },
+      { min: -94.41, max: -92.93, color: "#fb6a4a" },
+      { min: -92.93, max: -92.75, color: "#a50f15" },
+    ],
+    newcastle: [
+      { min: -80.51, max: -77.11, color: "#08306b" },
+      { min: -77.11, max: -76.84, color: "#2171b5" },
+      { min: -76.84, max: -76.49, color: "#c6dbef" },
+      { min: -76.49, max: -76.05, color: "#fcbba1" },
+      { min: -76.05, max: -75.7, color: "#fb6a4a" },
       { min: -75.7, max: -75.1, color: "#a50f15" },
     ],
   },
