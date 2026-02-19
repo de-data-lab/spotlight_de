@@ -68,7 +68,7 @@ export function Legend({
       const bucketsHTML = bucketColors
         .map(
           (color) =>
-            `<div style="flex:1; height:100%; background:${color};"></div>`
+            `<div style="flex:1; height:100%; background:${color};"></div>`,
         )
         .join("");
 
@@ -112,7 +112,7 @@ export function Legend({
 
         <!-- Labels Above Bucket Bar -->
         <div style="display:flex; justify-content:space-between; font-size:12px; color:#444; margin-bottom:4px;">
-          <span>Larger Decrease</span>
+          <span>Smallest Increase</span>
           <span>Larger Increase</span>
         </div>
 
@@ -148,7 +148,7 @@ export function Legend({
       const tooltip = div.querySelector<HTMLDivElement>("#legend-tooltip")!;
       const info = div.querySelector<HTMLDivElement>("#legend-info")!;
       const infoTooltip = div.querySelector<HTMLDivElement>(
-        "#legend-info-tooltip"
+        "#legend-info-tooltip",
       )!;
 
       // Gradient hover

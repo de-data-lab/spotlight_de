@@ -237,10 +237,10 @@ export default function DelawareMap() {
     selectedLayer === "tax_change"
       ? "Tax % Change"
       : selectedLayer === "assessment_change"
-      ? "Assessment % Change"
-      : selectedLayer === "tax_burden_change"
-      ? "Tax Burden % Change"
-      : "Legend";
+        ? "Assessment % Change"
+        : selectedLayer === "tax_burden_change"
+          ? "Tax Burden % Change"
+          : "Legend";
 
   // Load surrounding states mask
   useEffect(() => {
@@ -317,7 +317,7 @@ export default function DelawareMap() {
     };
 
     fetchCountyData().catch((err) =>
-      console.error("Error loading GeoJSON:", err)
+      console.error("Error loading GeoJSON:", err),
     );
   }, [county, selectedLayer]);
 
@@ -399,11 +399,44 @@ export default function DelawareMap() {
   const onEachFeature = (feature: GeoFeature, layer: L.Layer) => {
     const p = feature.properties;
 
-    let tooltipHTML = "";
+    const formatCountyName = (countyKey: string) => {
+      if (countyKey === "newcastle") return "New Castle County";
+      if (countyKey === "sussex") return "Sussex County";
+      if (countyKey === "kent") return "Kent County";
+      return "Delaware";
+    };
 
-    // ----------------------------
+    let tooltipHTML = "";
+    let countyMedianHTML = "";
+
+    // -----------------------------------
+    // Build County Median Block (if county selected)
+    // -----------------------------------
+    if (centerValue != null && !isNaN(centerValue)) {
+      const isStatewide = county === "all";
+
+      const regionName = isStatewide ? "Delaware" : formatCountyName(county);
+
+      const layerLabel =
+        selectedLayer === "tax_change"
+          ? "percent change in taxes"
+          : selectedLayer === "assessment_change"
+            ? "percent change in assessments"
+            : "percent change in tax burden";
+
+      countyMedianHTML = `
+    <hr style="margin:8px 0;" />
+    <div style="font-size:12px; color:#444;">
+      <b>${isStatewide ? "Statewide Median" : "Countywide Median"}:</b><br/>
+      The ${layerLabel} for <b>${regionName}</b> is 
+      <b>${centerValue.toFixed(2)}%</b>.
+    </div>
+  `;
+    }
+
+    // ==========================================================
     // TAX % CHANGE
-    // ----------------------------
+    // ==========================================================
     if (selectedLayer === "tax_change") {
       const pct =
         p.tax_change_pct != null ? p.tax_change_pct.toFixed(2) : "N/A";
@@ -435,12 +468,13 @@ export default function DelawareMap() {
         In 2024, the median tax was ${tax2024}, and in 2025 it changed to ${tax2025}.<br/>
         There were <b>${parcels}</b> comparable parcels in this tract.
       </div>
+      ${countyMedianHTML}
     `;
     }
 
-    // ----------------------------
+    // ==========================================================
     // ASSESSMENT % CHANGE
-    // ----------------------------
+    // ==========================================================
     else if (selectedLayer === "assessment_change") {
       const pct =
         p.assessment_change_pct != null
@@ -467,16 +501,18 @@ export default function DelawareMap() {
         Median Assessment 2025: ${a2025}<br/>
         Parcels Compared: <b>${parcels}</b>
       </div>
+      ${countyMedianHTML}
     `;
     }
 
-    // ----------------------------
+    // ==========================================================
     // TAX BURDEN % CHANGE
-    // ----------------------------
+    // ==========================================================
     else if (selectedLayer === "tax_burden_change") {
       const pct = p.burden_change != null ? p.burden_change.toFixed(2) : "N/A";
       const city = p.CITY_NAME || "Unknown community";
       const tract = p.GEOID || "N/A";
+
       const fmtPct = (v: number | null) =>
         v != null && !isNaN(v) ? `${(v * 100).toFixed(2)}%` : "N/A";
 
@@ -493,22 +529,14 @@ export default function DelawareMap() {
         Burden 2025: ${b2025}<br/>
         Parcels Compared: <b>${parcels}</b>
       </div>
+      ${countyMedianHTML}
     `;
     }
 
-    // fallback
-    else {
-      tooltipHTML = `
-      <div style="font-size:13px">
-        <b>${p.GEOID}</b><br/>
-        Change: ${getValue(p)?.toFixed(2) ?? "N/A"}%
-      </div>`;
-    }
-
-    // bind tooltip
+    // Bind tooltip
     layer.bindTooltip(tooltipHTML, { sticky: true });
 
-    // hover styles
+    // Hover styling
     layer.on({
       mouseover: (e: L.LeafletMouseEvent) => {
         (e.target as L.Path).setStyle({ weight: 4, color: "#000" });
