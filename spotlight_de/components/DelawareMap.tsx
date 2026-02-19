@@ -650,9 +650,9 @@ export default function DelawareMap() {
                   }}
                 >
                   <option value="all">All Counties</option>
-                  <option value="sussex">Sussex</option>
                   <option value="newcastle">New Castle</option>
                   <option value="kent">Kent</option>
+                  <option value="sussex">Sussex</option>
                 </select>
               </div>
 
