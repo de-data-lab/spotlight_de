@@ -1,0 +1,9 @@
+# data
+data/raw/
+data/processed/
+
+# notebooks checkpoints
+.ipynb_checkpoints/
+
+# system
+.DS_Store
